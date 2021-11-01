@@ -1,0 +1,98 @@
+version: '2'
+
+services:
+
+  mariadb:
+    image: mariadb:10.3
+    volumes:
+      - ./mariadb:/var/lib/mysql
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: test
+      MYSQL_DATABASE: test_db
+      MYSQL_USER: test
+      MYSQL_PASSWORD: test
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "9411:9411"
+
+  mc1-service:
+    image: ksonv/mc1-service:0.0.1-SNAPSHOT
+    ports:
+      - "8101:8101"
+    depends_on:
+      - kafka
+      - zookeeper
+      - jaeger
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/test_db
+      WEBSOCKET_SERVER_URI: ws://mc2-service:8102/message
+      RUNNING_TIME: 10
+      RUNNING_DELAY_TIME: 1000
+      JAEGER_AGENT_HOST: jaeger
+      JAEGER_AGENT_PORT: 6831
+      JAEGER_SAMPLER_MANAGER_HOST_PORT: jaeger:5778
+
+
+  mc2-service:
+    image: ksonv/mc2-service:0.0.1-SNAPSHOT
+    ports:
+      - "8102:8102"
+    depends_on:
+      - kafka
+      - zookeeper
+      - jaeger
+    environment:
+      KAFKA_HOST: kafka:9092
+      KAFKA_TOPIC: message
+      JAEGER_AGENT_HOST: jaeger
+      JAEGER_AGENT_PORT: 6831
+      JAEGER_SAMPLER_MANAGER_HOST_PORT: jaeger:5778
+
+  mc3-service:
+    image: ksonv/mc3-service:0.0.1-SNAPSHOT
+    ports:
+      - "8103:8103"
+    depends_on:
+      - kafka
+      - zookeeper
+      - jaeger
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_CONSUMER_GROUP_ID: mc3
+      MC1_ENDPOINT: http://mc1-service:8101/message/
+      JAEGER_AGENT_HOST: jaeger
+      JAEGER_AGENT_PORT: 6831
+      JAEGER_SAMPLER_MANAGER_HOST_PORT: jaeger:5778

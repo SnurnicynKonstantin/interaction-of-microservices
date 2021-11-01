@@ -41,3 +41,6 @@
 **/mvnw
 **/mvnw.cmd
 **/spring-grpc-math-service/
+
+**/mariadb/
+**/docker
